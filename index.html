@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>反诈演示</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif; }
+  body { background: #ededed; overflow: hidden; }
+
+  .page { position: fixed; inset: 0; overflow-y: auto; transition: opacity .5s ease, transform .5s ease; }
+  .page.hide { opacity: 0; transform: translateY(-30px); pointer-events: none; }
+
+  /* ===== 第零屏：正在扣款 loading ===== */
+  #loading-page {
+    background: #fff; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .spinner {
+    width: 48px; height: 48px; border-radius: 50%;
+    border: 4px solid #e8e8e8; border-top-color: #07C160;
+    animation: spin .8s linear infinite; margin-bottom: 22px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 16px; color: #333; }
+  .loading-amount { font-size: 14px; color: #999; margin-top: 8px; }
+
+  /* ===== 第一屏：账单详情 ===== */
+  #bill-page { background: #ededed; opacity: 0; transform: translateY(-30px); pointer-events: none; }
+  #bill-page.ready { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+  .statusbar {
+    height: 24px; display: flex; justify-content: space-between; align-items: center;
+    padding: 0 18px; font-size: 12px; color: #000; background: #fff;
+  }
+  .navbar {
+    height: 44px; background: #fff; display: flex; align-items: center; justify-content: center;
+    position: relative; border-bottom: .5px solid #e5e5e5;
+  }
+  .navbar .back {
+    position: absolute; left: 6px; width: 40px; height: 44px;
+    display: flex; align-items: center; justify-content: center; font-size: 22px; color: #000;
+  }
+  .navbar .title { font-size: 16px; font-weight: 500; }
+
+  .card {
+    background: #fff; border-radius: 10px; margin: 12px; padding: 0;
+  }
+  .bill-head {
+    padding: 30px 16px 26px; text-align: center;
+  }
+  .wx-icon {
+    width: 56px; height: 56px; border-radius: 50%; background: #07C160;
+    margin: 0 auto 14px; display: flex; align-items: center; justify-content: center;
+  }
+  .wx-icon svg { width: 32px; height: 32px; }
+  .amount { font-size: 28px; font-weight: 600; color: #111; letter-spacing: .5px; }
+  .amount .yuan { font-size: 20px; margin-right: 2px; }
+  .sub-status { margin-top: 10px; font-size: 13px; color: #888; }
+
+  .rows { padding: 0 16px; }
+  .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 13px 0; font-size: 14px; border-bottom: .5px solid #f0f0f0;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: #888; flex-shrink: 0; }
+  .row .v { color: #111; text-align: right; margin-left: 16px; word-break: break-all; }
+
+  .footer-btn {
+    margin: 28px 12px 20px; height: 46px; border-radius: 8px;
+    background: #07C160; color: #fff; font-size: 16px; border: none; width: calc(100% - 24px);
+  }
+  .footer-btn:active { background: #06ad56; }
+
+  /* ===== 第二屏：反诈警示 ===== */
+  #warn-page {
+    background: radial-gradient(ellipse at top, #1e293b 0%, #0f172a 70%);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+  }
+  #warn-page.show { display: flex; animation: fadeIn .6s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+
+  .warn-icon {
+    width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(251, 191, 36, .15); border: 2px solid #fbbf24;
+    display: flex; align-items: center; justify-content: center; margin-bottom: 28px;
+  }
+  .warn-icon svg { width: 44px; height: 44px; }
+
+  .warn-line1 {
+    font-size: 20px; line-height: 1.6; color: #f8fafc; font-weight: 600;
+    margin-bottom: 18px;
+  }
+  .warn-line1 .hl { color: #fbbf24; }
+  .warn-line2 {
+    font-size: 18px; line-height: 1.6; color: #fb923c; font-weight: 700;
+    margin-bottom: 40px; letter-spacing: 0; white-space: nowrap;
+  }
+  .warn-tip {
+    font-size: 12px; color: #64748b; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div class="page" id="loading-page">
+  <div class="spinner"></div>
+  <div class="loading-text">正在扣款…</div>
+  <div class="loading-amount">¥200.00</div>
+</div>
+
+<div class="page" id="bill-page">
+  <div class="statusbar">
+    <span id="clock">9:41</span>
+    <span>5G 网络</span>
+  </div>
+  <div class="navbar">
+    <div class="back">‹</div>
+    <div class="title">账单详情</div>
+  </div>
+
+  <div class="card">
+    <div class="bill-head">
+      <div class="wx-icon">
+        <svg viewBox="0 0 24 24" fill="white">
+          <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 5h2v5h3v2h-3v5h-2v-5H8v-2h3V7z"/>
+        </svg>
+      </div>
+      <div class="amount"><span class="yuan">¥</span>200.00</div>
+      <div class="sub-status">扣费成功</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="rows">
+      <div class="row"><span class="k">交易时间</span><span class="v" id="trade-time">2026-11-10 14:23:45</span></div>
+      <div class="row"><span class="k">交易类型</span><span class="v">消费</span></div>
+      <div class="row"><span class="k">付款方式</span><span class="v">零钱(********8888)</span></div>
+      <div class="row"><span class="k">收款方</span><span class="v">演示商户（反诈模拟场景）</span></div>
+      <div class="row"><span class="k">交易单号</span><span class="v" id="trade-no">4200002178202611101234567890</span></div>
+    </div>
+  </div>
+
+  <button class="footer-btn" id="done-btn">完成</button>
+</div>
+
+<div class="page" id="warn-page">
+  <div class="warn-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+  </div>
+  <div class="warn-line1">
+    来路不明的<span class="hl">二维码</span>和<span class="hl">链接</span><br>千万别乱扫、别乱点
+  </div>
+  <div class="warn-line2">西瓜冬瓜哈密瓜，被骗都是小傻瓜</div>
+  <div class="warn-tip">—— 反诈小课堂 · 你并没有被扣费，吓一跳吧 ——</div>
+</div>
+
+<script>
+  (function(){
+    var d = new Date();
+    function pad(n){ return n<10 ? '0'+n : ''+n; }
+    var str = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    document.getElementById('trade-time').textContent = str;
+    var m = pad(d.getMinutes());
+    document.getElementById('clock').textContent = (d.getHours()%12===0?12:d.getHours()%12)+':'+m;
+    var no = '4200002178' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate());
+    for (var i=0;i<10;i++) no += Math.floor(Math.random()*10);
+    document.getElementById('trade-no').textContent = no;
+  })();
+
+  var switched = false;
+  function switchPage(){
+    if (switched) return; switched = true;
+    var b = document.getElementById('bill-page');
+    b.classList.remove('ready');
+    b.classList.add('hide');
+    var w = document.getElementById('warn-page');
+    w.classList.add('show');
+  }
+  setTimeout(function(){
+    document.getElementById('loading-page').classList.add('hide');
+    document.getElementById('bill-page').classList.add('ready');
+    setTimeout(switchPage, 2800);
+  }, 2000);
+  document.getElementById('done-btn').addEventListener('click', switchPage);
+</script>
+</body>
+</html>
